@@ -1,0 +1,87 @@
+# {{ ansible_managed }}
+#
+# NOTE: Chaging this template updates iptables on all releng hosts :)
+# Please check with sysadmin-main before pushing out an update here. 
+#
+*nat
+:PREROUTING ACCEPT []
+:POSTROUTING ACCEPT []
+:OUTPUT ACCEPT []
+COMMIT
+*raw
+:PREROUTING ACCEPT []
+:OUTPUT ACCEPT []
+COMMIT
+*filter
+:INPUT DROP []
+:FORWARD ACCEPT []
+:OUTPUT ACCEPT []
+
+# loopback allowed
+-A INPUT -i lo -j ACCEPT
+
+# Accept ping and traceroute (needs icmp)
+-A INPUT -p icmp -j ACCEPT
+
+# Established connections allowed
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# Overwrite any global rules
+# for nrpe - allow it from nocs
+-A INPUT -p tcp -m tcp -s 192.168.1.10 --dport 5666 -j ACCEPT
+# FIXME - this is the global nat-ip and we need the noc01-specific ip
+-A INPUT -p tcp -m tcp -s 209.132.181.102 --dport 5666 -j ACCEPT
+-A INPUT -p tcp -m tcp -s 209.132.181.35 --dport 5666 -j ACCEPT
+-A INPUT -p tcp -m tcp -s 10.5.126.41  --dport 5666 -j ACCEPT
+
+# SSH
+# ssh block against uni in .cz where problem(s) have been cited
+# added by skvidal on jan 24 2011 - as per request from spot
+-A INPUT -p tcp -m tcp -s 147.251.0.0/16 --dport 22 -j REJECT
+# matches last rule for a service we want blocked
+-A INPUT -p tcp -m tcp -s 192.168.100.0/24 --dport 22 -j REJECT --reject-with tcp-reset
+-A INPUT -p tcp -m tcp  --dport 22 -j ACCEPT 
+
+# for fireball mode - allow port 5099 from lockbox and it's ips
+-A INPUT -p tcp -m tcp --dport 5099 -s 10.5.126.23 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 5099 -s 10.5.127.51 -j ACCEPT
+
+# Allow all netapp traffic
+-A INPUT -p udp -m udp -s 10.5.88.36 -j ACCEPT
+-A INPUT -p tcp -m tcp -s 10.5.88.36 -j ACCEPT
+
+# Bacula Backups backup03
+-A INPUT -p tcp -m tcp -s 10.5.126.161 --dport 9102 -j ACCEPT
+-A INPUT -p tcp -m tcp -s 192.168.1.64 --dport 9102 -j ACCEPT
+
+
+# Custom Services
+
+# Services TCP
+-A INPUT -p tcp -m tcp  --dport 22 -j ACCEPT
+-A INPUT -p tcp -m tcp  --dport 80 -j ACCEPT
+-A INPUT -p tcp -m tcp  --dport 443 -j ACCEPT
+
+# Services UDP
+
+# more services we use - ports for random services and TG listeners.
+# if the host/group defines incoming tcp_ports - allow them
+{% for port in tcp_ports %}
+-A INPUT -p tcp -m tcp --dport {{ port }} -j ACCEPT
+{% endfor %}
+
+# if the host/group defines incoming udp_ports - allow them
+{% for port in udp_ports %}
+-A INPUT -p udp -m udp --dport {{ port }} -j ACCEPT
+{% endfor %}
+
+# if there are custom rules - put them in as-is
+{% for rule in custom_rules %}
+{{ rule }}
+{% endfor %}
+
+# Extra protection for 192.168.100.x vpn hosts. 
+-A INPUT -s 192.168.100.0/24 -j REJECT --reject-with icmp-host-prohibited
+
+-A INPUT -j REJECT --reject-with icmp-host-prohibited
+COMMIT

@@ -1,0 +1,134 @@
+---
+# Configuration for the fedbadges consumer
+
+- name: install needed packages
+  yum: pkg=$item state=installed
+  with_items:
+  - python-fedbadges
+  - python-psycopg2
+  - python-sqlalchemy0.8
+  tags:
+  - packages
+
+- name: copy database configuration
+  template: >
+    src=$item dest=/etc/fedmsg.d/$item
+    owner=fedmsg group=fedmsg mode=0600
+  with_items:
+  - datanommer.py
+  - badges-awarder.py
+  tags:
+  - config
+  notify:
+  - restart fedmsg-hub
+
+- name: make badge definition directory
+  file: >
+    path=/usr/share/badges/rules
+    state=directory
+    owner=fedmsg group=fedmsg mode=0755
+  tags:
+  - config
+  - badges
+
+# Here I'm "permanently" hotfixing the fedmsg-hub
+# It needs to load the forward-compat sqlalchemy0.7 package from the get-go.
+- name: copy over patched fedmsg-hub
+  copy: >
+    src=patched-fedmsg-hub dest=/usr/bin/fedmsg-hub
+    owner=root group=root mode=0755
+  tags:
+  - patches
+  - hotfix
+  notify:
+  - restart fedmsg-hub
+
+- name: copy over all our badge definitions
+  copy: >
+    src=$item
+    dest=/usr/share/badges/rules/
+    owner=fedmsg group=fedmsg mode=0644
+  with_fileglob:
+  - /srv/web/infra/badges/rules/*.yml
+  tags:
+  - config
+  - badges
+  notify:
+  - restart fedmsg-hub
+
+- name: ensure the fedmsg user has a homedir for cron to work
+  file: >
+    state=directory
+    path=/usr/share/fedmsg
+    mode=700
+    owner=fedmsg
+    group=fedmsg
+  when: env != "staging"
+  tags:
+  - config
+  - cron
+
+- name: ensure badges cron directories exist
+  file: >
+    state=directory
+    path=$item
+    mode=755
+    owner=root
+  when: env != "staging"
+  with_items:
+  - /usr/share/badges/cronjobs/
+  - /etc/cron.d/
+  tags:
+  - config
+  - cron
+
+- name: oldschool badge award scripts
+  copy: >
+    src=cron/$item
+    dest=/usr/share/badges/cronjobs/$item
+    owner=fedmsg
+    mode=744
+  when: env != "staging"
+  with_items:
+  - award-oldschool-badges
+  - award-libravatar-badge
+  tags:
+  - config
+  - cron
+
+- name: oldschool badge award cronjobs
+  copy: >
+    src=cron/$item.cron
+    dest=/etc/cron.d/$item
+    owner=root
+    mode=644
+  when: env != "staging"
+  with_items:
+  - award-oldschool-badges
+  - award-libravatar-badge
+  tags:
+  - config
+  - cron
+
+- name: logrotate for badge award cronjobs
+  copy: >
+    src=cron/cron-badges-logrotate
+    dest=/etc/logrotate.d/cron-badges-logrotate
+    owner=root
+    mode=644
+  tags:
+  - config
+  - cron
+
+- name: copy over the badge-admin one-off scripts
+  copy: >
+    src=$item
+    dest=/usr/local/bin/$item
+    owner=root
+    group=sysadmin-badges
+    mode=750
+  with_items:
+  - award-badge
+  - get-badges-person-id
+  tags:
+  - scripts

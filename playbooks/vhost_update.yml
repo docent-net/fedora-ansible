@@ -1,0 +1,49 @@
+# This playboook updates a virthost and all it's guests. 
+#
+# requires --extra-vars="target=somevhostname yumcommand=update"
+#
+
+- name: find instances
+  hosts: "{{ target }}"
+  accelerate: true
+  gather_facts: False
+  user: root
+
+  tasks:
+  - name: get list of guests
+    virt: command=list_vms
+    register: vmlist
+
+  - name: add them to myvms_new group
+    local_action: add_host hostname={{ item }} groupname=myvms_new
+    with_items: vmlist.list_vms
+
+- name: update the system
+  hosts: "{{ target }}:myvms_new"
+  accelerate: true
+  gather_facts: False
+  user: root
+
+  tasks:
+  - name: expire-caches
+    command: yum clean expire-cache
+    
+  - name: yum -y {{ yumcommand }}
+    command: yum -y {{ yumcommand }}
+    async: 7200
+    poll: 30
+
+- name: run rkhunter if installed
+  hosts:  "{{ target }}:myvms_new"
+  accelerate: true
+  user: root
+
+  tasks:
+  - name: check for rkhunter
+    command: /usr/bin/test -f /usr/bin/rkhunter
+    register: rkhunter
+    ignore_errors: true
+  
+  - name: run rkhunter --propupd
+    command: /usr/bin/rkhunter --propupd
+    when: rkhunter|success

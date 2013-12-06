@@ -1,0 +1,42 @@
+---
+- name: put rhel repos on system
+  action: copy src=$files/common/$item dest=/etc/yum.repos.d/$item
+  with_items:
+  - epel6.repo
+  - rhel6.repo
+  when: is_rhel == 'True'
+  tags:
+  - config
+  - packages
+
+- name: put fedora repos on x86 systems
+  action: copy src=$files/common/$item dest=/etc/yum.repos.d/$item
+  with_items:
+  - fedora.repo
+  - fedora-updates.repo
+  - fedora-updates-testing.repo
+  when: is_fedora == 'True' and ansible_architecture == 'x86_64'
+  tags:
+  - config
+  - packages
+
+- name: put fedora repos on arm systems
+  action: copy src=$files/common/$item-arm dest=/etc/yum.repos.d/$item
+  with_items:
+  - fedora.repo
+  - fedora-updates.repo
+  - fedora-updates-testing.repo
+  when: is_fedora == 'True' and ansible_architecture == 'armv7l'
+  tags:
+  - config
+  - packages
+
+- name: add infrastructure repo
+  action: copy src=$files/common/$item dest=/etc/yum.repos.d/$item
+  with_items:
+  - infrastructure.repo
+  - infrastructure-testing.repo
+  tags:
+  - config
+  - packages
+

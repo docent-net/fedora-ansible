@@ -1,0 +1,34 @@
+- name: check/create instance
+  hosts: blockerbugs-dev.cloud.fedoraproject.org
+  user: root
+  gather_facts: False
+
+  vars_files: 
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+
+  tasks:
+  - include: $tasks/persistent_cloud.yml
+  - include: $tasks/growroot_cloud.yml
+
+- name: provision instance
+  hosts: blockerbugs-dev.cloud.fedoraproject.org
+  user: root
+  gather_facts: True
+  vars:
+   - tcp_ports: [22, 80, 443]
+   - udp_ports: []
+
+  vars_files: 
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+   - ${vars}/${ansible_distribution}.yml
+
+  tasks:
+  - include: $tasks/cloud_setup_basic.yml
+  - include: $tasks/iptables.yml
+  - name: mount up blockerbugs-dev to /srv/persistent
+    mount: name=/srv/persistent src='LABEL=blockerbugs-dev' fstype=ext4 state=mounted
+
+  handlers:
+  - include: $handlers/restart_services.yml

@@ -1,0 +1,69 @@
+---
+# tasklist for setting up fedmsg
+# This is the base set of files needed for fedmsg
+
+- name: install needed packages
+  yum: pkg=$item state=installed
+  with_items:
+  - fedmsg
+  tags:
+  - packages
+
+- name: setup /etc/fedmsg.d directory
+  file: path=/etc/fedmsg.d owner=root group=root mode=0755 state=directory
+  tags:
+  - config
+
+- name: setup basic /etc/fedmsg.d/ contents
+  template: src=$item.j2 dest=/etc/fedmsg.d/$item owner=root group=root mode=644
+  with_items:
+  - ssl.py
+  - endpoints.py
+  - endpoints-fedbadges.py
+  - endpoints-nuancier.py
+  - endpoints-mailman.py
+  - relay.py
+  - pkgdb.py
+  - logging.py
+  - base.py
+  tags:
+  - config
+
+- name: setup /etc/pki/fedmsg directory
+  file: path=/etc/pki/fedmsg owner=root group=root mode=0755 state=directory
+  tags:
+  - config
+
+- name: install fedmsg ca.cert
+  copy: >
+    src=$puppet_private/fedmsg-certs/keys/ca.crt
+    dest=/etc/pki/fedmsg/ca.crt
+    owner=root
+    group=root
+    mode=0644
+  tags:
+  - config
+
+- name: fedmsg certs
+  copy: >
+    src=$private/files/fedmsg-certs/keys/{{item['service']}}-{{ansible_fqdn}}.crt
+    dest=/etc/pki/fedmsg/
+    mode=644
+    owner={{item['owner']}}
+    group={{item['group']}}
+  with_items: ${fedmsg_certs}
+  when: fedmsg_certs != []
+  tags:
+  - config
+
+- name: fedmsg keys
+  copy: >
+    src=$private/files/fedmsg-certs/keys/{{item['service']}}-{{ansible_fqdn}}.key
+    dest=/etc/pki/fedmsg/
+    mode=0640
+    owner={{item['owner']}}
+    group={{item['group']}}
+  with_items: ${fedmsg_certs}
+  when: fedmsg_certs != []
+  tags:
+  - config

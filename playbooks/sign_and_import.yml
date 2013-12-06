@@ -1,0 +1,59 @@
+# This playbook takes new rpms specified with a fileglob, signs them, and adds
+# them to the infrastructure repo.
+#
+# requires --extra-vars="rpmdir='/home/fedora/ralph/rpms/'"
+
+# TODO -- grab rpms from koji build/task ids beforehand?
+# TODO -- how do make it easy to select the infra-testing repo?
+# TODO -- other arches than x86_64?
+
+- name: batch sign and import a directory full of rpms
+  user: root
+  hosts: lockbox01.phx2.fedoraproject.org
+  connection: local
+
+  # Toggle this variable to import to the testing repo as opposed to the staging
+  # repo.  Since we're in freeze right now, we'll default to the testing repo.
+  # It would be nice to be able to toggle this from the command line.
+  vars:
+  #- repodir: /mnt/fedora/app/fi-repo/testing/6
+  - repodir: /mnt/fedora/app/fi-repo/6
+
+  tasks:
+  - name: Fail if no rpmdir provided
+    fail: msg="No rpmdir provided"
+    when: rpmdir is not defined
+  # TODO -- I'd also like to fail if rpmdir does not exist.
+  # TODO -- I'd also like to fail if there are no *.rpm files in there.
+
+  - name: sign all the rpms with our gpg key
+    shell: /bin/rpm --resign ${rpmdir}/*.rpm
+
+  - name: make a directory where we store the rpms afterwards
+    file: path=${rpmdir}-old state=directory
+
+
+
+  - name: copy the source rpms to the SRPMS dir
+    copy: src=${item} dest=${repodir}/SRPMS/
+    with_fileglob: ${rpmdir}/*.src.rpm
+
+  - name: Run createrepo on the srpm dir
+    command: createrepo --update ${repodir}/SRPMS/
+
+  - name: move processed srpms out to ${rpmdir}-old
+    command: /bin/mv ${item} ${rpmdir}-old/
+    with_fileglob: ${rpmdir}/*.src.rpm
+
+
+
+  - name: copy the binary rpms to the x86_64 dir
+    copy: src=${item} dest=${repodir}/x86_64/
+    with_fileglob: ${rpmdir}/*.rpm
+
+  - name: Run createrepo on the x86_64 dir
+    command: createrepo --update ${repodir}/x86_64/
+
+  - name: move processed rpms out to ${rpmdir}-old
+    command: /bin/mv ${item} ${rpmdir}-old/
+    with_fileglob: ${rpmdir}/*.rpm

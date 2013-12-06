@@ -1,0 +1,56 @@
+---
+# install apache(httpd)
+- name: install apache
+  yum: name=$item state=installed
+  with_items:
+  - httpd
+  - httpd-tools
+  tags:
+  - packages
+  - apache
+
+- name: set apache running/enabled
+  service: name=httpd enabled=yes
+  ignore_errors: true
+  notify:
+  - restart apache
+  tags:
+  - service
+  - apache
+  
+# install hash randomization hotfix
+- name: hotfix - copy over new httpd init script 
+  copy: src=$files/hotfix/httpd/httpd.init dest=/etc/init.d/httpd
+        owner=root group=root mode=0755
+  notify:
+  - restart apache
+  tags:
+  - config
+  - hotfix
+  - apache
+
+- name: hotfix - copy over new httpd sysconfig
+  copy: src=$files/hotfix/httpd/httpd.sysconfig dest=/etc/sysconfig/httpd
+  notify:
+  - restart apache
+  tags:
+  - config
+  - hotfix
+  - apache
+
+- name: add appserver headers.conf
+  template: src=$files/httpd/headers.conf.j2 dest=/etc/httpd/conf.d/headers.conf
+  notify:
+  - restart apache
+  tags: 
+  - config
+  - apache
+
+- name: add apache_status location for collectd
+  template: src=$files/httpd/apachestatus.conf dest=/etc/httpd/conf.d/apachestatus.conf
+  notify:
+  - restart apache
+  tags: 
+  - config
+  - apache
+  

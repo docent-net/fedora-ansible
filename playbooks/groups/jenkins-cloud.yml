@@ -1,0 +1,353 @@
+- name: check/create instance for jenkins-master
+  hosts: jenkins-cloud  # 209.132.184.153
+  user: root
+  gather_facts: False
+  tags:
+   - jenkins_master
+
+  vars_files: 
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+
+  tasks:
+  - include: $tasks/persistent_cloud.yml
+  - include: $tasks/growroot_cloud.yml
+
+- name: provision master
+  hosts: 209.132.184.153
+  user: root
+  gather_facts: True
+  tags:
+   - jenkins_master
+
+  vars_files: 
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+   - ${vars}/${ansible_distribution}.yml
+  vars:
+   - resolvconf: resolv.conf/jenkins-cloud
+
+  roles:
+   - /srv/web/infra/ansible/roles/base
+
+  tasks:
+  - include: $tasks/cloud_setup_basic.yml
+
+  - name: make the jenkins path
+    action: file state=directory path=/var/lib/jenkins
+
+  - name: mount our persistent space
+    action: mount name=/var/lib/jenkins src='LABEL=jenkins' fstype=ext4 state=mounted
+
+  - name: poke firewall holes
+    action: command lokkit $item
+    with_items:
+    - --service=ssh
+    - --service=https
+    - --service=http
+
+  - name: install pkgs for jenkins
+    action: yum state=installed pkg=$item
+    with_items:
+    - vim
+    - dejavu-s\*
+    - fontconfig
+    - java-1.6.0-openjdk
+    - httpd
+    - openssh-clients
+    - git
+    tags:
+    - packages
+
+  - name: add jenkins proxy config file for apache
+    action: copy src=$files/jenkins/master/jenkins-apache.conf dest=/etc/httpd/conf.d/jenkins-apache.conf owner=root group=root mode=0644
+    notify:
+    - restart httpd
+    tags:
+    - config
+
+  - name: enable apache
+    action: service name=httpd state=running enabled=true
+
+  - name: add jenkins upstream repo 
+    action: copy src=$files/jenkins/master/jenkins.repo dest=/etc/yum.repos.d/jenkins.repo  owner=root group=root
+    tags:
+     - config
+
+  - name: import jenkins upstream gpg key
+    action: copy src=$files/jenkins/master/jenkins-ci.org.key dest=/etc/pki/rpm-gpg/RPM-GPG-KEY-jenkins-ci.org owner=root group=root
+    tags:
+     - config
+
+  - name: install pkgs for jenkins
+    action: yum state=installed pkg=$item
+    with_items:
+    - jenkins
+    tags:
+    - packages
+
+  - name: set the hostname to jenkins-osversion
+    action: command hostname jenkins-master-${dist_tag}
+    tags:
+    - config
+
+  - name: make sure jenkins is stopped
+    action: service name=jenkins state=stopped
+
+  - name: clean any previous plugin deployments
+    action: file state=absent path=/var/lib/jenkins/plugins
+
+  - name: mkdir dir for jenkins data
+    action: file state=directory path=/var/lib/jenkins/plugins/ owner=jenkins group=jenkins
+
+  - name: import jenkins plugins
+    action: copy src=$item owner=jenkins group=jenkins dest=/var/lib/jenkins/plugins/
+    with_fileglob: $files/jenkins/master/plugins/*.hpi
+    tags:
+     - config
+
+  - name: import jenkins configuration files
+    action: copy src=$item owner=jenkins group=jenkins dest=/var/lib/jenkins/ backup=yes
+    with_fileglob: $files/jenkins/master/*.xml
+    tags:
+     - config
+
+  - name: add jenkins ssh priv key so it can connect to clients
+    action: copy src=$private/files/jenkins/ssh/jenkins_master dest=/var/tmp/jenkins_master_id_rsa mode=600 owner=jenkins group=jenkins
+    tags:
+    - config
+
+  - name: start jenkins itself
+    action: service name=jenkins state=running
+
+  - name: wait for a dir to exist - this is just ugly
+    shell: while `true`; do [ -d /var/lib/jenkins/plugins/openid/WEB-INF/lib/ ] && break; sleep 5; done
+    async: 1800
+    poll: 20
+
+  - name: jenkins hotfix big file
+    copy: src=$item dest=/var/lib/jenkins/plugins/openid/WEB-INF/lib/ group=jenkins mode=655
+    with_fileglob: $bigfiles/hotfixes/jenkins/openid/*.jar
+    notify: 
+      - restart jenkins
+
+  handlers:
+  - include: $handlers/restart_services.yml
+
+###################################################
+# jenkins slaves
+
+- name: check/create instance for jenkins-slaves
+  hosts: jenkins-slaves
+  user: root
+  gather_facts: False
+  tags:
+   - jenkins_workers
+
+  vars_files:
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+  vars:
+   - keypair: fedora-admin-20130801
+   - security_group: default
+
+  tasks:
+  - include: $tasks/persistent_cloud.yml
+  - include: $tasks/growroot_cloud.yml
+
+- name: provision workers
+  hosts: jenkins-slaves
+  user: root
+  gather_facts: True
+  tags:
+   - jenkins_workers
+
+  vars_files:
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+   - ${vars}/${ansible_distribution}.yml
+
+  tasks:
+  - include: $tasks/cloud_setup_basic.yml
+
+  - name: add jenkins repos
+    action: copy src=$item dest=/etc/yum.repos.d/ owner=root group=root
+    with_fileglob: $files/jenkins/slaves/*.repo
+    tags:
+    - config
+    - packages
+
+  - name: install pkgs for jenkins
+    action: yum state=installed pkg=$item
+    with_items:
+    - vim
+    - java-1.7.0-openjdk
+    - java-1.7.0-openjdk-devel
+    - subversion
+    - bzr
+    - git
+    - rpmlint
+    - rpmdevtools
+    - mercurial
+    - mock
+    - gcc
+    - gcc-c++
+    - python-bugzilla
+    - python-straight-plugin
+    - python-pip
+    - python-virtualenv 
+    - python-coverage
+    - pylint
+    - python-argparse
+    - python-nose
+    - python-BeautifulSoup
+    - python-fedora
+    - python-unittest2
+    - python-pep8
+    - python-psycopg2
+    - postgresql-devel   # Required to install python-psycopg2 w/in a venv
+    - docbook-style-xsl  # Required by gimp-help-2
+    - make               # Required by gimp-help-2
+    - automake           # Required by gimp-help-2
+    - libcurl-devel      # Required by blockerbugs
+    - python-formencode  # Required by javapackages-tools
+    - asciidoc           # Required by javapackages-tools
+    - xmlto              # Required by javapackages-tools
+    - pycairo-devel      # Required by dogtail
+    tags:
+    - packages
+
+  - name: install pkgs for jenkins for fedora systems
+    action: yum state=installed pkg=$item
+    #when: is_fedora == 'True'
+    with_items:
+    - python3
+    - python-nose-cover3
+    - python3-nose-cover3
+    - sbt
+    - glibc.i686
+    - glibc-devel.i686
+    - libstdc++.i686
+    - zlib-devel.i686
+    - ncurses-devel.i686
+    - libX11-devel.i686
+    - libXrender.i686
+    - libXrandr.i686
+    - nspr-devel           ## Requested by 389-ds-base
+    - nss-devel
+    - svrcore-devel
+    - openldap-devel
+    - libdb-devel
+    - cyrus-sasl-devel
+    - icu
+    - libicu-devel
+    - gcc-c++
+    - net-snmp-devel
+    - lm_sensors-devel
+    - bzip2-devel
+    - zlib-devel
+    - openssl-devel
+    - tcp_wrappers
+    - pam-devel
+    - systemd-units
+    - policycoreutils-python
+    - openldap-clients
+    - perl-Mozilla-LDAP
+    - nss-tools
+    - cyrus-sasl-gssapi
+    - cyrus-sasl-md5
+    - libdb-utils
+    - systemd-units
+    - perl-Socket
+    - perl-NetAddr-IP
+    - pcre-devel            ## End of request list for 389-ds-base
+    - maven                 # Required by xmvn https://fedorahosted.org/fedora-infrastructure/ticket/4054
+    - gtk3-devel            # Required by dogtail
+    - glib2-devel           # Required by Cockpit
+    - libgudev1-devel
+    - json-glib-devel
+    - gobject-introspection-devel
+    - libudisks2-devel
+    - NetworkManager-glib-devel
+    - systemd-devel
+    - accountsservice-devel
+    - pam-devel
+    - autoconf
+    - libtool
+    - intltool
+    - jsl
+    - python-scss
+    - gtk-doc
+    - krb5-devel
+    - sshpass
+    - perl-Locale-PO
+    - perl-JSON
+    - glib-networking
+    - realmd
+    - udisks2
+    - mdadm
+    - lvm2
+    - sshpass           # End requires for Cockpit
+    - tito              # Requested by msrb for javapackages-tools and xmvn (ticket#4113)
+    tags:
+    - packages
+
+  - name: drop current android SDK
+    when: is_fedora == 'True'
+    action: file state=absent path=/var/android
+
+  - name: mkdir dir for android SDK
+    when: is_fedora == 'True'
+    action: file state=directory path=/var/android owner=jenkins_slave group=jenkins_slave
+
+  - name: copy android SDK
+    when: is_fedora == 'True'
+    action: copy src=$bigfiles/jenkins/android-sdk-with-platform-17.tar.gz dest=/var/android/ owner=jenkins_slave group=jenkins_slave
+
+  - name: extract android SDK
+    when: is_fedora == 'True'
+    command: tar -xvf /var/android/android-sdk-with-platform-17.tar.gz --owner=jenkins_slave --group=jenkins_slave -C /var/android/
+
+  - name: delete sdk archive
+    when: is_fedora == 'True'
+    action: file state=absent path=/var/android/android-sdk-with-platform-17.tar.gz
+
+  - name: set the hostname to jenkins-osversion
+    action: command hostname jenkins-${dist_tag}
+    tags:
+    - config
+
+  - name: setup jenkins_slave user
+    action: user name=jenkins_slave state=present createhome=yes system=no
+    tags:
+    - jenkinsuser  
+
+  - name: setup jenkins_slave ssh key
+    action: authorized_key user=jenkins_slave key="{{ item }}"
+    with_file:
+    - $private/files/jenkins/ssh/jenkins_master.pub
+
+  - name: jenkins_slave to mock group
+    action: user name=jenkins_slave groups=mock
+  
+  - name: add .gitconfig for jenkins_slave user
+    action: copy src=$files/jenkins/gitconfig dest=/home/jenkins_slave/.gitconfig owner=jenkins_slave group=jenkins_slave mode=664
+    tags:
+     - config
+  
+  - name: template sshd_config
+    action: copy src=$item dest=/etc/ssh/sshd_config mode=0600 owner=root group=root
+    first_available_file:
+      - $files/jenkins/sshd_config_slave.$ansible_distribution
+      - $files/jenkins/sshd_config_slave
+    notify:
+    - restart sshd
+    tags:
+     - config
+  
+  - name: mkdir dir for jenkins data
+    action: file state=directory path=/mnt/jenkins owner=jenkins_slave group=jenkins_slave
+
+  handlers:
+  - include: $handlers/restart_services.yml
+

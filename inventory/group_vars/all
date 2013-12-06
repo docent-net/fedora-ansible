@@ -1,0 +1,47 @@
+---
+freezes: true
+# most of our systems are in phx2
+datacenter: phx2
+
+# most of our systems are 64bit. 
+# Used to install various nagios scripts and the like.
+libdir: /usr/lib64
+
+# example of ports for default iptables
+# tcp_ports: [ 22, 80, 443 ]
+# udp_ports: [ 110, 1024, 2049 ]
+# multiple lines can be handled as below
+# custom_rules: [ '-A INPUT -p tcp -m tcp --dport 8888 -j ACCEPT',
+#                  '-A INPUT -p tcp -m tcp --dport 8889 -j ACCEPT' ]
+# We default these to empty
+udp_ports: []
+tcp_ports: []
+custom_rules: []
+
+# defaults for virt installs
+ks_url: http://infrastructure.fedoraproject.org/repo/rhel/ks/kvm-rhel-6
+ks_repo: http://infrastructure.fedoraproject.org/repo/rhel/RHEL6-x86_64/
+mem_size: 2048
+num_cpus: 2
+lvm_size: 20000
+
+# default virt install command is for a single nic-device
+# define in another group file for more nics (see buildvm)
+virt_install_command: /usr/sbin/virt-install -n ${inventory_hostname} -r ${mem_size} 
+                 --disk ${volgroup}/${inventory_hostname} 
+                 --vcpus=${num_cpus}  -l ${ks_repo} -x 
+                 "ksdevice=eth0 ks=${ks_url} ip=${eth0_ip} netmask=${nm} 
+                  gateway=${gw} dns=${dns} console=tty0 console=ttyS0
+                  hostname=${inventory_hostname}" 
+                 --network=bridge=br0 --autostart --noautoconsole
+
+
+# By default, nodes get no fedmsg certs.  They need to declare them explicitly.
+fedmsg_certs: []
+
+# by default the number of procs we allow before we whine
+nrpe_procs_warn: 175
+nrpe_procs_crit: 200
+
+# env is staging or production, we default it to production here. 
+env: production

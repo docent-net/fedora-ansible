@@ -1,0 +1,31 @@
+
+- name: Setup arm-releng hosts
+  hosts: arm-releng
+  user: root
+  gather_facts: True
+  tags:
+   - arm-releng
+
+  vars_files:
+   - /srv/web/infra/ansible/vars/global.yml
+   - ${private}/vars.yml
+   - ${vars}/${ansible_distribution}.yml
+
+  roles:
+  - /srv/web/infra/ansible/roles/base
+  - /srv/web/infra/ansible/roles/fas_client
+  - /srv/web/infra/ansible/roles/rkhunter
+  - /srv/web/infra/ansible/roles/denyhosts
+  - /srv/web/infra/ansible/roles/nagios_client
+
+  tasks:
+  # this is how you include other task lists
+  - include: $tasks/hosts.yml
+  - include: $tasks/2fa_client.yml
+  - include: $tasks/motd.yml
+  - include: $tasks/common_scripts.yml
+  - include: $tasks/sudo.yml
+  - include: $tasks/koji/releng_config.yml
+
+  handlers:
+  - include: $handlers/restart_services.yml

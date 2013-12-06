@@ -1,0 +1,18 @@
+---
+
+- name: install rkhunter
+  yum: name=rkhunter state=present
+  tags:
+  - packages
+
+- name: rkhunter.conf
+  template: src=rkhunter.conf.j2 dest=/etc/rkhunter.conf mode=0640
+  tags:
+  - config
+
+- name: rkhunter sysconfig
+  copy: src=rkhunter.sysconfig dest=/etc/sysconfig/rkhunter mode=0640
+  tags:
+  - config
+
+
